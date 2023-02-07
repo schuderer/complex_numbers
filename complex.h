@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tuple>
 #include <string>
 
 template<typename T>
@@ -33,6 +34,36 @@ private:
     uint32_t id_{0};
     inline static uint32_t next_id_{0};
 
+    // Factor out the calculations proper. Define them here so they get inlined (hopefully)
+    // -- I mean, strictly speaking even the cpp is part of the header because it's included below, so it's potentially all inlined...
+    // The "inline" keyword is superfluous, but I want to make my intentions clear.
+    // I chose the slightly clumsy out-parameter option -- a custom struct with structured bindings would
+    // be much nicer and also very fast, but for assignment operators, it adds almost twice the overhead (still much faster than tuples!).
+    inline void add(const T& re1, const T& im1, const T& re2, const T& im2, T& out_re, T& out_im) const {
+        out_re = re1 + re2;
+        out_im = im1 + im2;
+    }
+    inline void sub(const T& re1, const T& im1, const T& re2, const T& im2, T& out_re, T& out_im) const {
+        out_re = re1 - re2;
+        out_im = im1 - im2;
+    }
+    inline void mult(const T& re1, const T& im1, const T& re2, const T& im2, T& out_re, T& out_im) const {
+        // (re1 + im1) * (re2 + im2) = re1*re2 + re1*im2 + im1*re2 + (-im2*im2) -> re=(re1*re2 - im2*im2), im=(re1*im2 + im1*re2)
+        out_re = re1 * re2 - im1 * im2;
+        out_im = re1 * im2 + im1 * re2;
+    }
+    inline void div(const T& re1, const T& im1, const T& re2, const T& im2, T& out_re, T& out_im) const {
+        // Multiply nominator and denominator of the fraction by the complex conjugate. Multiplied out, we get two fractions:
+        T common_denominator = re2 * re2 - im2 * im2;
+        out_re = (re1 * re2 + im1 * im2) / common_denominator;
+        out_im = (im1 * re2 - re1 * im2) / common_denominator;
+    }
+
+// Making << a friend of this class: (actually not necessary because our << only calls the public method str())
+// <typename T> would not work because template declarations cannot be nested. But it still needs
+// the template in order to match the signature of the actual << declaration/definition:
+//template<typename X>
+//friend std::ostream& operator<<(std::ostream &os, const Complex<X> &c);
 
 };
 
