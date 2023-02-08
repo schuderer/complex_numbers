@@ -13,6 +13,8 @@ template<typename T>
 Complex<T>::Complex(T re, T im) : re_{re}, im_{im} {
     id_ = next_id_++;
 }
+template<typename T>
+Complex<T>::Complex(calc_result val): Complex{val.re, val.im} {};
 
 
 // Getters
@@ -31,30 +33,22 @@ const T Complex<T>::im() const {
 
 template<typename T>
 Complex<T> Complex<T>::operator+(const Complex& x) const {
-    T out_re, out_im;
-    add(re_, im_, x.re_, x.im_, out_re, out_im);
-    return Complex(out_re, out_im);
+    return Complex(add(re_, im_, x.re_, x.im_));
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator-(const Complex& x) const {
-    T out_re, out_im;
-    sub(re_, im_, x.re_, x.im_, out_re, out_im);
-    return Complex(out_re, out_im);
+    return Complex(sub(re_, im_, x.re_, x.im_));
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator*(const Complex& x) const {
-    T out_re, out_im;
-    mult(re_, im_, x.re_, x.im_, out_re, out_im);
-    return Complex(out_re, out_im);
+    return Complex(mult(re_, im_, x.re_, x.im_));
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator/(const Complex& x) const {
-    T out_re, out_im;
-    div(re_, im_, x.re_, x.im_, out_re, out_im);
-    return Complex(out_re, out_im);
+    return Complex(div(re_, im_, x.re_, x.im_));
 }
 
 template<typename T>
@@ -64,25 +58,37 @@ Complex<T> Complex<T>::operator-() const {
 
 template<typename T>
 Complex<T> Complex<T>::operator+=(const Complex& x) {
-    add(re_, im_, x.re_, x.im_, re_, im_);
+    // Which one to use: `auto result` or `auto result`? The returned value is an rvalue,
+    // so should be moved (not copied) anyways.
+    // Does `const auto&` help anything in this case? Or is it unnecessary?
+    // const auto& result = add(re_, im_, x.re_, x.im_);
+    auto result = add(re_, im_, x.re_, x.im_);  // could also have used std::tuple, tie, structured binding, ...
+    re_ = result.re;
+    im_ = result.im;
     return *this;
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator-=(const Complex& x) {
-    sub(re_, im_, x.re_, x.im_, re_, im_);
+    auto result = sub(re_, im_, x.re_, x.im_);
+    re_ = result.re;
+    im_ = result.im;
     return *this;
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator*=(const Complex& x) {
-    mult(re_, im_, x.re_, x.im_, re_, im_);
+    auto result = mult(re_, im_, x.re_, x.im_);
+    re_ = result.re;
+    im_ = result.im;
     return *this;
 }
 
 template<typename T>
 Complex<T> Complex<T>::operator/=(const Complex& x) {
-    div(re_, im_, x.re_, x.im_, re_, im_);
+    auto result = div(re_, im_, x.re_, x.im_);
+    re_ = result.re;
+    im_ = result.im;
     return *this;
 }
 

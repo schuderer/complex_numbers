@@ -1,5 +1,5 @@
 # complex_numbers
-Playing around with C++ template classes and trying to figure out how to modularize them.
+Learning C++ and playing around with template classes.
 
 # Notes
 
@@ -8,20 +8,22 @@ I got to the point where I wanted helper functions to not have code duplication 
 in the operator and respective assignment operator overloads.
 
 Because these helpers have to return not one, but two values `re` and `im`, I tried several variants.
-I found the results quite interesting:
- - A custom struct is the best combination of convenience and speed. Partucilarly intuitive to use with structured bindings (`auto [a, b] = ...`)
- - Slightly faster are out-parameters, but they are quite verbose to use. Although they end up taking half the time of structs for assignment operators, so I'm torn there.
- - Surprisingly, returning a full `Complex` class took only twice the time as above options (but then again, it's a very simple class with no heap-allocated members).
- - std::tuple did not work out, speedwise. Using tuples with std::get or structured bindings took 4-5 times as long of the best options.
- - Tuples with `tie(a, b)` were slowest, more than 8 times as slow as the best options.
- 
-TL;DR: Use structs and use structured bindings (`auto [a, b] = ...`) -- they are fast and intuitive. If the interface
-does not matter, use out-parameters for maximum speed.
- 
+Naively, I tested them in debug mode and got interesting results (out-params were fastest, followed by
+custom structs, followed by returning a full `Complex` object and then followed by `std:tuple`.
 
-The variants (this now includes variants for usage):
+Alas, when I tried the same in release mode, they were all equally fast. I even had to tweak the
+tests so that the loops don't get optimized out completely.
+
+So, I did not learn what runs the fastest, but I learned that benchmarking is hard. :) I also learned that
+structured bindings (`auto [a, b] = ...`) are awesome, as fast as it gets, and work with tuples,
+structs, and even some objects.
+
+(I still like to think that paying attention to reference vs copy, lvalue/rvalues etc. paid off --
+but if I'm completely honest I have a feeling that my newbie's hubris would not survive a test of that assumption, either :) ) 
+
+The variants under tests (this now includes variants for usage):
 ```cpp
-// ... inside class Complex (made everything public temporarily for the test) ...
+// ... inside header of class Complex (made everything public temporarily for the test) ...
 
 // The "inline" keyword is superfluous, but I want to make my intentions clear.
 // There are several ways to get a result of two values out of a function (I want to avoid instantiating a new Complex object):
@@ -35,10 +37,10 @@ inline void add2(const T& re1, const T& im1, const T& re2, const T& im2, T& out_
     out_im = im1 + im2;
 }
 // Variant 3: struct. Should not be more expensive than instantiating our Complex class IMO, but hey...
-struct re_im {
-    T re;
-    T im;
-};
+//    struct re_im {
+//        T re;
+//        T im;
+//    };
 inline re_im add3(const T& re1, const T& im1, const T& re2, const T& im2) const {
     return {re1 + re2, im1 + im2};
 }
@@ -48,24 +50,41 @@ inline Complex add4(const T& re1, const T& im1, const T& re2, const T& im2) cons
 }
 
 // for testing the operators which use our helpers:
+Complex plus0(const Complex& x) const;
+Complex plus1(const Complex& x) const;
+Complex plus2(const Complex& x) const;
+Complex plus3(const Complex& x) const;
+Complex plus4(const Complex& x) const;
+Complex pluseq0(const Complex& x);
+Complex pluseq1(const Complex& x);
+Complex pluseq2(const Complex& x);
+Complex pluseq3(const Complex& x);
+Complex pluseq4(const Complex& x);
+
+// inside the class definition in complex.cpp:
+// By the way, moving the plusX/pluseqX definitions into the header made no difference.
 template<typename T>
 Complex<T> Complex<T>::plus0(const Complex& x) const {  // baseline (should be fastest)
     return Complex(re_ + x.re_, im_ + x.im_);
 }
 template<typename T>
 Complex<T> Complex<T>::plus1(const Complex& x) const { // using struct constructor
-    return Complex(add(re_, im_, x.re_, x.im_)); // "add" here is our best choice from above (structs, "add3")
+    return Complex(add3(re_, im_, x.re_, x.im_)); // "add" here is our best choice from above (structs)
 }
 template<typename T>
 Complex<T> Complex<T>::plus2(const Complex& x) const { // using structured bindings
-    auto [re, im] = add(re_, im_, x.re_, x.im_);
+    auto [re, im] = add3(re_, im_, x.re_, x.im_);
     return Complex(re, im);
 }
 template<typename T>
 Complex<T> Complex<T>::plus3(const Complex& x) const { // using out-param calculation function
     int re, im;
-    add_out_params(re_, im_, x.re_, x.im_, re, im);
+    add2(re_, im_, x.re_, x.im_, re, im);
     return Complex(re, im);
+}
+template<typename T>
+Complex<T> Complex<T>::plus4(const Complex& x) const { // using Complex object
+    return add4(re_, im_, x.re_, x.im_);
 }
 template<typename T>
 Complex<T> Complex<T>::pluseq0(const Complex& x) {  // baseline (should be fastest)
@@ -75,110 +94,144 @@ Complex<T> Complex<T>::pluseq0(const Complex& x) {  // baseline (should be faste
 }
 template<typename T>
 Complex<T> Complex<T>::pluseq1(const Complex& x) { // using structured bindings
-    auto [re, im] = add(re_, im_, x.re_, x.im_);
+    auto [re, im] = add3(re_, im_, x.re_, x.im_);
     re_ = re;
     im_ = im;
     return *this;
 }
 template<typename T>
 Complex<T> Complex<T>::pluseq2(const Complex& x) { // using struct members
-    auto re_im = add(re_, im_, x.re_, x.im_);
+    auto re_im = add3(re_, im_, x.re_, x.im_);
     re_ = re_im.re;
     im_ = re_im.im;
     return *this;
 }
 template<typename T>
 Complex<T> Complex<T>::pluseq3(const Complex& x) { // using out-param calculation function
-    add_out_params(re_, im_, x.re_, x.im_, re_, im_);
+    add2(re_, im_, x.re_, x.im_, re_, im_);
     return *this;
 }
-
+template<typename T>
+Complex<T> Complex<T>::pluseq4(const Complex& x) { // using Complex object
+    auto [re_out, im_out, unused] = add4(re_, im_, x.re_, x.im_);
+    re_ = re_out;
+    im_ = im_out;
+    return *this;
+}
 ```
 
 The quick-and-dirty timing code and results:
 ```cpp
-auto start = std::chrono::high_resolution_clock::now();
+int x_result{3}, y_result{1};
 Complex<int> t(0, 0);
-//    for (int i = 0; i < 10000000; ++i) {  // Tuple with structured bindings (unpacking): ~155
-//        auto [x, y] = t.add0(1,2,3,4);
-//        x++, y++;
+auto start = std::chrono::high_resolution_clock::now();
+//    // sanity check:
+//    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Tuple with structured bindings (unpacking): ~648 (debug mode: ~155 (debug mode had slightly different setup as I did not have to thwart release mode optimization))
+//        // Added weird calculations in an attempt to avoid a time of zero due to optimization.
+//        // I don't really care about int overflows here.
+//        auto [x, y] = t.add0(x_result,y_result,2/i/4,-i/2);
+//        x_result += x;
+//        y_result += y;
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Tuple with tie: ~295
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Tuple with tie: ~649 (debug mode: ~295)
 //        int x, y;
-//        std::tie(x, y) = t.add0(1,2,3,4);
-//        x++, y++;
+//        std::tie(x, y) = t.add0(x_result,y_result,2/i/4,-i/2);
+//        x_result += x;
+//        y_result += y;
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Tuple with std::get: ~150
-//        auto tup = t.add0(1,2,3,4);
-//        (std::get<0>(tup))++, (std::get<1>(tup))++;
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Tuple with std::get: ~654 (debug mode: ~150)
+//        auto tup = t.add0(x_result,y_result,2/i/4,-i/2);
+//        x_result += (std::get<0>(tup));
+//        y_result += (std::get<1>(tup));
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Out-parameters: ~34
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Out-parameters: ~635 (debug mode: ~34)
 //        int x, y;
-//        t.add2(1,2,3,4,x,y);
-//        x++, y++;
+//        t.add2(x_result,y_result,2/i/4,-i/2, x, y);
+//        x_result += x;
+//        y_result += y;
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Custom struct: ~38  <-- speed/convenience winners!
-//        Complex<int>::re_im result = t.add3(1,2,3,4);
-//        result.re++, result.im++;
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Custom struct: ~635 (debug mode: ~38)
+//        Complex<int>::re_im res = t.add3(x_result,y_result,2/i/4,-i/2);
+//        x_result += res.re;
+//        y_result += res.im;
 //    }
-//  for (int i = 0; i < 10000000; ++i) {  // Custom struct: ~38  <-- speed/convenience winners!
-//      auto [x, y] = t.add3(1,2,3,4);
-//      x++, y++;
-//  }
-//    for (int i = 0; i < 10000000; ++i) {  // Class Complex: ~82
-//        auto res = t.add4(1,2,3,4);
-//        res.re_++, res.im_++;
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Custom struct: ~635 (debug mode: ~38)
+//        auto [x, y] = t.add3(x_result,y_result,2/i/4,-i/2);
+//        x_result += x;
+//        y_result += y;
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Class Complex: ~82 with structured bindings
-//        [[maybe_unused]] auto [x, y, unused] = t.add4(1,2,3,4);
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Class Complex: ~630 (debug mode: ~82)
+//        auto res = t.add4(x_result,y_result,2/i/4,-i/2);
+//        x_result += res.re_;
+//        y_result += res.im_;
+//    }
+//    for (uint64_t i = 0; i < 1000000000; ++i) {  // Class Complex with structured bindings: ~630 (debug mode: ~82)
+//        [[maybe_unused]] auto [x, y, unused] = t.add4(x_result,y_result,2/i/4,-i/2);
 //        // (void)unused; // actually faster without this
-//        x++, y++;
+//        x_result += x;
+//        y_result += y;
 //    }
-
+//
 // for testing the operators which use our helpers:
-//    for (int i = 0; i < 10000000; ++i) {  // Baseline addition (calculation directly in body): ~133 (optimal)
+//    for (int i = 0; i < 500000000; ++i) {  // Baseline addition (calculation directly in body): ~480 (debug mode: ~133 (optimal))
 //        Complex<int> t2(1, 2);
-//        auto res = t2.plus0(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.plus0(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // using struct constructor: ~166 -- 33 over optimal (naive delegating struct constructor: 180 -- 47 over optimal)
+//    for (int i = 0; i < 500000000; ++i) {  // using struct constructor: ~480 - delegating constructor: also ~9! (debug mode: ~166 -- 33 over optimal (naive delegating struct constructor: 180 -- 47 over optimal))
 //        Complex<int> t2(1, 2);
-//        auto res = t2.plus1(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.plus1(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // using structured bindings: ~166 -- 33 over optimal
+//    for (int i = 0; i < 500000000; ++i) {  // using structured bindings: ~480 (debug mode: ~166 -- 33 over optimal)
 //        Complex<int> t2(1, 2);
-//        auto res = t2.plus2(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.plus2(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // using out-param calculation function: ~157 -- 24 over optimal
+//    for (int i = 0; i < 500000000; ++i) {  // using out-param calculation function: ~480 (debug mode: ~157 -- 24 over optimal)
 //        Complex<int> t2(1, 2);
-//        auto res = t2.plus3(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.plus3(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // Baseline addition (calculation directly in body): ~110 (optimal)
+//    for (int i = 0; i < 500000000; ++i) {  // Baseline addition (calculation directly in body): ~480 (debug mode: ~110 (optimal))
 //        Complex<int> t2(1, 2);
-//        auto res = t2.pluseq0(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.pluseq0(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-    for (int i = 0; i < 10000000; ++i) {  // using structured bindings: ~144 -- 34 over optimal
-        Complex<int> t2(1, 2);
-        auto res = t2.pluseq1(Complex(3,4));
-        int x = res.im();
-    }
-//    for (int i = 0; i < 10000000; ++i) {  // using struct members: ~144 -- 34 over optimal
+//    for (int i = 0; i < 500000000; ++i) {  // using structured bindings: ~480 (debug mode: ~144 -- 34 over optimal)
 //        Complex<int> t2(1, 2);
-//        auto res = t2.pluseq2(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.pluseq1(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
-//    for (int i = 0; i < 10000000; ++i) {  // using out-param calculation function: ~127 -- 17 over optimal
+//    for (int i = 0; i < 500000000; ++i) {  // using struct members: ~480 (debug mode: ~144 -- 34 over optimal)
 //        Complex<int> t2(1, 2);
-//        auto res = t2.pluseq3(Complex(3,4));
-//        int x = res.im();
+//        auto res = t2.pluseq2(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
 //    }
+//    for (int i = 0; i < 500000000; ++i) {  // using out-param calculation function: ~480 (debug mode: ~127 -- 17 over optimal)
+//        Complex<int> t2(1, 2);
+//        auto res = t2.pluseq3(Complex(x_result,-i/2));
+//        x_result += res.re();
+//        y_result += res.im();
+//    }
+for (int i = 0; i < 500000000; ++i) {  // using Class Complex: ~480 (debug mode: ~127 -- 17 over optimal)
+    Complex<int> t2(1, 2);
+    auto res = t2.pluseq4(Complex(x_result,-i/2));
+    x_result += res.re();
+    y_result += res.im();
+}
 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>
                 (std::chrono::high_resolution_clock::now() - start);
-cout << duration.count() << endl;
+// It's important to do something with the result:
+cout << duration.count() << " (result: " << x_result << "," << y_result << ")" << endl;
 ```
 
 Here's some temporary code I used to check whether something is an lvalue or rvalue:
